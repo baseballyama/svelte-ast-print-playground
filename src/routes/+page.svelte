@@ -29,8 +29,23 @@
 	}
 
 	let svelte = $state(getInitialSvelte());
-	let svelteAST = $derived.by(() => parse(svelte, { modern: true }));
-	let output = $derived.by(() => print(svelteAST));
+	let svelteAST = $derived.by(() => {
+		try {
+			return parse(svelte, { modern: true });
+		} catch (e) {
+			console.error(e);
+			return null;
+		}
+	});
+	let output = $derived.by(() => {
+		try {
+			if (!svelteAST) return 'Error parsing Svelte code';
+			return print(svelteAST);
+		} catch (e) {
+			console.error(e);
+			return 'Error printing AST';
+		}
+	});
 
 	$effect(() => {
 		const encoded = LZString.compressToEncodedURIComponent(svelte);
