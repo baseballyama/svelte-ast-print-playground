@@ -59,7 +59,8 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Browser tests
-        run: pnpm run test:e2e
+        # The shots-* projects only capture screenshots for before / after comparisons.
+        run: pnpm run test:e2e --project desktop --project mobile
 
       - name: Upload report
         if: always()
