@@ -9,51 +9,86 @@
 	let {
 		code = $bindable(),
 		editable,
-		maxHeight
-	}: { code: string; editable: boolean; maxHeight: string } = $props();
+		label
+	}: { code: string; editable: boolean; label: string } = $props();
 
-	const randomId = Math.random().toString(36).slice(2);
-	let editorView: EditorView;
+	let container: HTMLDivElement;
+	let editorView: EditorView | undefined = $state();
+
+	// Colours come from the page's CSS custom properties so the editor follows
+	// the light / dark theme without a separate CodeMirror theme package.
+	const theme = EditorView.theme({
+		'&': {
+			height: '100%',
+			fontSize: 'var(--code-size)',
+			color: 'var(--text)',
+			backgroundColor: 'var(--surface)'
+		},
+		'&.cm-focused': { outline: 'none' },
+		'.cm-scroller': { fontFamily: 'var(--font-mono)', lineHeight: '1.6' },
+		'.cm-content': { caretColor: 'var(--accent)', padding: '12px 0' },
+		'.cm-cursor': { borderLeftColor: 'var(--accent)' },
+		'.cm-gutters': {
+			backgroundColor: 'var(--surface)',
+			color: 'var(--text-faint)',
+			border: 'none',
+			paddingLeft: '4px'
+		},
+		'.cm-activeLine': { backgroundColor: 'var(--active-line)' },
+		'.cm-activeLineGutter': { backgroundColor: 'var(--active-line)', color: 'var(--text-muted)' },
+		'&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
+			backgroundColor: 'var(--selection)'
+		},
+		'.cm-foldPlaceholder': {
+			backgroundColor: 'var(--surface-raised)',
+			border: '1px solid var(--border)',
+			color: 'var(--text-muted)'
+		}
+	});
 
 	function onChange(update: ViewUpdate) {
 		if (update.docChanged) {
-			const newContent = update.state.doc.toString();
-			code = newContent;
+			code = update.state.doc.toString();
 		}
 	}
 
 	onMount(() => {
-		const startState = EditorState.create({
-			doc: code,
-			extensions: [
-				keymap.of(defaultKeymap),
-				basicSetup,
-				svelte(),
-				EditorView.updateListener.of(onChange),
-				EditorView.editable.of(editable)
-			]
-		});
-
 		editorView = new EditorView({
-			state: startState,
-			parent: document.getElementById(randomId)!
+			state: EditorState.create({
+				doc: code,
+				extensions: [
+					keymap.of(defaultKeymap),
+					basicSetup,
+					svelte(),
+					theme,
+					EditorView.updateListener.of(onChange),
+					EditorView.editable.of(editable),
+					EditorState.readOnly.of(!editable),
+					EditorView.contentAttributes.of({ 'aria-label': label })
+				]
+			}),
+			parent: container
 		});
+		return () => editorView?.destroy();
+	});
 
-		if (!editable) {
-			$effect(() => {
-				editorView?.dispatch({
-					changes: { from: 0, to: editorView.state.doc.length, insert: code }
-				});
-			});
-		}
+	// Read-only editors mirror `code` whenever the parent recomputes it.
+	$effect(() => {
+		const next = code;
+		if (editable || !editorView || editorView.state.doc.toString() === next) return;
+		editorView.dispatch({ changes: { from: 0, to: editorView.state.doc.length, insert: next } });
 	});
 </script>
 
-<div id={randomId} class="editor" style:max-height={maxHeight}></div>
+<div bind:this={container} class="editor"></div>
 
 <style>
 	.editor {
-		min-height: 200px;
-		overflow: auto;
+		height: 100%;
+		min-height: 0;
+	}
+
+	.editor :global(.cm-editor) {
+		height: 100%;
 	}
 </style>

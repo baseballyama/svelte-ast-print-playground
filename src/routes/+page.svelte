@@ -12,6 +12,13 @@
 
 <div>Hi!</div>`;
 
+	type Panel = 'input' | 'output' | 'ast';
+	const panels: { id: Panel; label: string }[] = [
+		{ id: 'input', label: 'Svelte' },
+		{ id: 'output', label: 'Printed' },
+		{ id: 'ast', label: 'AST' }
+	];
+
 	function getInitialSvelte() {
 		const hash = location.hash.slice(1);
 		if (hash) {
@@ -28,86 +35,569 @@
 		return defaultSvelte;
 	}
 
+	/** Human-readable message for an error thrown by `parse` or `print`. */
+	function describe(e: unknown) {
+		if (!(e instanceof Error)) return { message: String(e), location: '' };
+		// Svelte's CompileError carries `start: { line, column }` (column is 0-based).
+		const start = (e as { start?: { line: number; column: number } }).start;
+		const message = e.message.split('\n')[0] ?? e.message;
+		return { message, location: start ? `Line ${start.line}, column ${start.column + 1}` : '' };
+	}
+
 	let svelte = $state(getInitialSvelte());
-	let svelteAST = $derived.by(() => {
+	let parsed = $derived.by(() => {
 		try {
-			return parse(svelte, { modern: true });
+			return { ast: parse(svelte, { modern: true }), error: null };
 		} catch (e) {
 			console.error(e);
-			return null;
+			return { ast: null, error: describe(e) };
 		}
 	});
-	let output = $derived.by(() => {
+	let printed = $derived.by(() => {
+		if (!parsed.ast) return { code: 'Error parsing Svelte code', error: null };
 		try {
-			if (!svelteAST) return 'Error parsing Svelte code';
-			return print(svelteAST).code;
+			return { code: print(parsed.ast).code, error: null };
 		} catch (e) {
 			console.error(e);
-			return 'Error printing AST';
+			return { code: 'Error printing AST', error: describe(e) };
 		}
 	});
+	let astJson = $derived(JSON.stringify(parsed.ast, null, 2));
+	let roundTrip = $derived(
+		parsed.error || printed.error ? null : printed.code === svelte ? 'identical' : 'reformatted'
+	);
+
+	let activePanel: Panel = $state('input');
+	let copied: string | null = $state(null);
+	let copiedTimer: ReturnType<typeof setTimeout> | undefined;
 
 	$effect(() => {
 		const encoded = LZString.compressToEncodedURIComponent(svelte);
 		history.replaceState(null, '', `#${encoded}`);
 	});
+
+	async function copy(text: string, what: string) {
+		try {
+			await navigator.clipboard.writeText(text);
+			copied = what;
+		} catch (e) {
+			console.error(e);
+			copied = 'Copy failed';
+		}
+		clearTimeout(copiedTimer);
+		copiedTimer = setTimeout(() => (copied = null), 2000);
+	}
+
+	function reset() {
+		svelte = defaultSvelte;
+	}
+
+	// Roving focus for the small-screen tab bar (WAI-ARIA tabs pattern).
+	function onTabKeydown(event: KeyboardEvent) {
+		const index = panels.findIndex((p) => p.id === activePanel);
+		const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+		let next = index;
+		if (step) next = (index + step + panels.length) % panels.length;
+		else if (event.key === 'Home') next = 0;
+		else if (event.key === 'End') next = panels.length - 1;
+		else return;
+		event.preventDefault();
+		activePanel = panels[next]!.id;
+		document.getElementById(`tab-${activePanel}`)?.focus();
+	}
 </script>
 
-<header>
-	<h1>svelte-ast-print Playground</h1>
-	<div class="links">
-		<a href="https://github.com/xeho91/svelte-ast-print?tab=readme-ov-file" target="_blank">
-			svelte-ast-print on GitHub
-		</a>
-		<a href="https://github.com/baseballyama/svelte-ast-print-playground" target="_blank">
-			Playground on GitHub
-		</a>
-	</div>
-</header>
+<svelte:head>
+	<title>svelte-ast-print Playground</title>
+	<meta
+		name="description"
+		content="Parse Svelte into an AST and print it back with svelte-ast-print."
+	/>
+</svelte:head>
 
-<div class="box">
-	<div class="left">
-		<h2>Svelte</h2>
-		<Editor bind:code={svelte} editable={true} maxHeight="calc(50vh - 80px)" />
+<div class="app">
+	<header class="topbar">
+		<div class="brand">
+			<h1>svelte-ast-print <span>Playground</span></h1>
+			<p class="tagline">Svelte → AST → Svelte, live in your browser</p>
+		</div>
+		<nav class="actions" aria-label="Playground actions">
+			<button type="button" class="button" onclick={() => copy(location.href, 'Link copied')}>
+				Copy share link
+			</button>
+			<button type="button" class="button ghost" onclick={reset}>Reset example</button>
+			<a
+				class="link"
+				href="https://github.com/xeho91/svelte-ast-print?tab=readme-ov-file"
+				target="_blank"
+				rel="noreferrer">svelte-ast-print on GitHub</a
+			>
+			<a
+				class="link"
+				href="https://github.com/baseballyama/svelte-ast-print-playground"
+				target="_blank"
+				rel="noreferrer">Playground on GitHub</a
+			>
+		</nav>
+	</header>
 
-		<h2>Svelte → AST → Svelte</h2>
-		<Editor code={output} editable={false} maxHeight="calc(50vh - 80px)" />
+	<p class="toast" role="status" aria-live="polite">{copied ?? ''}</p>
+
+	<div class="tabs" role="tablist" aria-label="Panels">
+		{#each panels as panel (panel.id)}
+			<button
+				type="button"
+				role="tab"
+				id="tab-{panel.id}"
+				aria-controls="panel-{panel.id}"
+				aria-selected={activePanel === panel.id}
+				tabindex={activePanel === panel.id ? 0 : -1}
+				onclick={() => (activePanel = panel.id)}
+				onkeydown={onTabKeydown}
+			>
+				{panel.label}
+				{#if panel.id === 'input' && parsed.error}<span class="dot error" aria-label="has error"
+					></span>{/if}
+			</button>
+		{/each}
 	</div>
-	<div class="right">
-		<h2>Svelte → AST</h2>
-		<Editor
-			code={JSON.stringify(svelteAST, null, 2)}
-			editable={false}
-			maxHeight="calc(100vh - 110px)"
-		/>
-	</div>
+
+	<main class="workspace">
+		<section
+			class="panel input"
+			id="panel-input"
+			aria-labelledby="heading-input"
+			data-active={activePanel === 'input'}
+		>
+			<header class="panel-header">
+				<h2 id="heading-input">Svelte <span class="hint">input</span></h2>
+				{#if parsed.error}
+					<span class="badge error">Parse error</span>
+				{:else}
+					<span class="badge ok">Parsed</span>
+				{/if}
+			</header>
+			<div class="panel-body">
+				<Editor bind:code={svelte} editable={true} label="Svelte input" />
+			</div>
+			{#if parsed.error}
+				<div class="problem" role="alert">
+					<strong>{parsed.error.message}</strong>
+					{#if parsed.error.location}<span>{parsed.error.location}</span>{/if}
+				</div>
+			{/if}
+			<p class="keyhint">
+				Tip: press <kbd>Esc</kbd> then <kbd>Tab</kbd> to move focus out of the editor.
+			</p>
+		</section>
+
+		<section
+			class="panel output"
+			id="panel-output"
+			aria-labelledby="heading-output"
+			data-active={activePanel === 'output'}
+		>
+			<header class="panel-header">
+				<h2 id="heading-output">Printed <span class="hint">Svelte → AST → Svelte</span></h2>
+				{#if roundTrip === 'identical'}
+					<span class="badge ok">Identical to input</span>
+				{:else if roundTrip === 'reformatted'}
+					<span class="badge neutral">Reformatted</span>
+				{:else if printed.error}
+					<span class="badge error">Print error</span>
+				{/if}
+				<button
+					type="button"
+					class="button small"
+					disabled={!!(parsed.error || printed.error)}
+					onclick={() => copy(printed.code, 'Output copied')}>Copy</button
+				>
+			</header>
+			<div class="panel-body">
+				<Editor code={printed.code} editable={false} label="Printed Svelte output" />
+			</div>
+			{#if printed.error}
+				<div class="problem" role="alert">
+					<strong>{printed.error.message}</strong>
+				</div>
+			{/if}
+		</section>
+
+		<section
+			class="panel ast"
+			id="panel-ast"
+			aria-labelledby="heading-ast"
+			data-active={activePanel === 'ast'}
+		>
+			<header class="panel-header">
+				<h2 id="heading-ast">AST <span class="hint">svelte/compiler · modern</span></h2>
+				<button
+					type="button"
+					class="button small"
+					disabled={!parsed.ast}
+					onclick={() => copy(astJson, 'AST copied')}>Copy JSON</button
+				>
+			</header>
+			<div class="panel-body">
+				<Editor code={astJson} editable={false} label="Svelte AST as JSON" />
+			</div>
+		</section>
+	</main>
 </div>
 
 <style>
-	header {
-		border-bottom: 2px solid #ccc;
-		margin-bottom: 16px;
+	:global(:root) {
+		color-scheme: light dark;
+		--font-sans:
+			ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+			sans-serif;
+		--font-mono:
+			ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+		--code-size: 13px;
+		--radius: 10px;
+
+		--bg: #f6f7f9;
+		--surface: #ffffff;
+		--surface-raised: #f0f2f5;
+		--border: #dfe3e8;
+		--text: #1d2229;
+		--text-muted: #59616d;
+		--text-faint: #8b929c;
+		--accent: #e5452e;
+		--accent-text: #b4321f;
+		--active-line: #f4f6f9;
+		--selection: #ffd7cf;
+		--ok-bg: #e5f5ec;
+		--ok-text: #17663a;
+		--error-bg: #fdeceb;
+		--error-text: #a8241a;
+		--neutral-bg: #eef1f5;
+		--neutral-text: #4a5260;
+	}
+
+	@media (prefers-color-scheme: dark) {
+		:global(:root) {
+			--bg: #0f1115;
+			--surface: #161a20;
+			--surface-raised: #1e232b;
+			--border: #2a3039;
+			--text: #e6e9ee;
+			--text-muted: #a5adba;
+			--text-faint: #6b7380;
+			--accent: #ff6a4d;
+			--accent-text: #ff8a73;
+			--active-line: #1b2027;
+			--selection: #5a2a22;
+			--ok-bg: #12301f;
+			--ok-text: #7dd9a2;
+			--error-bg: #3a1714;
+			--error-text: #ff9b91;
+			--neutral-bg: #232933;
+			--neutral-text: #b8c0cc;
+		}
+	}
+
+	:global(body) {
+		background: var(--bg);
+		color: var(--text);
+		font-family: var(--font-sans);
+		font-size: 14px;
+		line-height: 1.5;
+		-webkit-font-smoothing: antialiased;
+	}
+
+	.app {
 		display: flex;
+		flex-direction: column;
+		height: 100dvh;
+		padding: 16px 20px 20px;
+		gap: 12px;
+	}
+
+	.topbar {
+		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
 		justify-content: space-between;
+		gap: 12px 24px;
 	}
 
-	.links {
-		margin-right: 16px;
+	h1 {
+		font-size: 18px;
+		font-weight: 650;
+		letter-spacing: -0.01em;
+	}
+
+	h1 span {
+		color: var(--accent-text);
+	}
+
+	.tagline {
+		color: var(--text-muted);
+		font-size: 13px;
+	}
+
+	.actions {
 		display: flex;
-		gap: 1rem;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px 16px;
 	}
 
-	.box {
+	.button {
+		font: inherit;
+		font-size: 13px;
+		font-weight: 550;
+		padding: 6px 12px;
+		border-radius: 8px;
+		border: 1px solid var(--accent);
+		background: var(--accent);
+		color: #fff;
+		cursor: pointer;
+	}
+
+	.button.ghost {
+		background: transparent;
+		color: var(--text);
+		border-color: var(--border);
+	}
+
+	.button.small {
+		padding: 3px 10px;
+		font-size: 12px;
+		background: var(--surface-raised);
+		color: var(--text);
+		border-color: var(--border);
+	}
+
+	.button:hover:not(:disabled) {
+		filter: brightness(1.05);
+	}
+
+	.button:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.link {
+		color: var(--text-muted);
+		font-size: 13px;
+		text-underline-offset: 3px;
+	}
+
+	.link:hover {
+		color: var(--text);
+	}
+
+	:is(.button, .link, [role='tab']):focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+
+	.toast {
+		position: fixed;
+		right: 20px;
+		bottom: 20px;
+		margin: 0;
+		padding: 0;
+		z-index: 10;
+	}
+
+	.toast:not(:empty) {
+		padding: 8px 14px;
+		border-radius: 8px;
+		background: var(--text);
+		color: var(--bg);
+		font-size: 13px;
+	}
+
+	.workspace {
+		flex: 1;
+		min-height: 0;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+		grid-template-areas:
+			'input ast'
+			'output ast';
+		gap: 12px;
+	}
+
+	.panel {
 		display: flex;
-		gap: 1rem;
+		flex-direction: column;
+		min-height: 0;
+		background: var(--surface);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		overflow: hidden;
 	}
 
-	.left {
-		flex: 1;
+	.input {
+		grid-area: input;
 	}
 
-	.right {
+	.output {
+		grid-area: output;
+	}
+
+	.ast {
+		grid-area: ast;
+	}
+
+	.panel-header {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 8px 12px;
+		border-bottom: 1px solid var(--border);
+		background: var(--surface-raised);
+	}
+
+	.panel-header h2 {
+		font-size: 13px;
+		font-weight: 650;
+		margin-right: auto;
+		display: flex;
+		align-items: baseline;
+		gap: 8px;
+	}
+
+	.hint {
+		font-weight: 450;
+		color: var(--text-faint);
+		font-size: 12px;
+	}
+
+	.panel-body {
 		flex: 1;
+		min-height: 0;
+		overflow: hidden;
+	}
+
+	.badge {
+		font-size: 11px;
+		font-weight: 600;
+		padding: 2px 8px;
+		border-radius: 999px;
+		white-space: nowrap;
+	}
+
+	.badge.ok {
+		background: var(--ok-bg);
+		color: var(--ok-text);
+	}
+
+	.badge.error {
+		background: var(--error-bg);
+		color: var(--error-text);
+	}
+
+	.badge.neutral {
+		background: var(--neutral-bg);
+		color: var(--neutral-text);
+	}
+
+	.problem {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px 12px;
+		padding: 8px 12px;
+		border-top: 1px solid var(--border);
+		background: var(--error-bg);
+		color: var(--error-text);
+		font-size: 13px;
+	}
+
+	.problem span {
+		font-family: var(--font-mono);
+		font-size: 12px;
+	}
+
+	.keyhint {
+		margin: 0;
+		padding: 6px 12px;
+		border-top: 1px solid var(--border);
+		color: var(--text-faint);
+		font-size: 12px;
+	}
+
+	kbd {
+		font-family: var(--font-mono);
+		font-size: 11px;
+		padding: 0 4px;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		background: var(--surface-raised);
+	}
+
+	.tabs {
+		display: none;
+	}
+
+	.dot {
+		display: inline-block;
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		margin-left: 6px;
+		vertical-align: middle;
+	}
+
+	.dot.error {
+		background: var(--error-text);
+	}
+
+	@media (max-width: 860px) {
+		.app {
+			padding: 12px;
+			height: auto;
+			min-height: 100dvh;
+		}
+
+		.tabs {
+			display: flex;
+			gap: 4px;
+			padding: 4px;
+			border-radius: var(--radius);
+			background: var(--surface-raised);
+			border: 1px solid var(--border);
+		}
+
+		[role='tab'] {
+			flex: 1;
+			font: inherit;
+			font-size: 13px;
+			font-weight: 600;
+			padding: 8px;
+			border: 0;
+			border-radius: 8px;
+			background: transparent;
+			color: var(--text-muted);
+			cursor: pointer;
+		}
+
+		[role='tab'][aria-selected='true'] {
+			background: var(--surface);
+			color: var(--text);
+			box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+		}
+
+		.workspace {
+			display: block;
+		}
+
+		.panel {
+			height: calc(100dvh - 190px);
+			min-height: 360px;
+		}
+
+		.panel[data-active='false'] {
+			display: none;
+		}
+
+		.keyhint {
+			display: none;
+		}
 	}
 </style>
