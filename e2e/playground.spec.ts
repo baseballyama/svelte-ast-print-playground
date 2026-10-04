@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test';
+import { print } from 'svelte-ast-print';
+import { parse } from 'svelte/compiler';
 import { codeFromUrl, defaultSvelte, editor, hashFor, invalidSvelte, open } from './helpers';
+
+// Expected panel contents come from the same libraries, run in Node, so the
+// browser output is compared exactly rather than by a fragment.
+const expectedAst = (code: string) => JSON.stringify(parse(code, { modern: true }), null, 2);
+const expectedPrint = (code: string) => print(parse(code, { modern: true })).code;
 
 const isMobile = (name: string) => name === 'mobile';
 
@@ -54,6 +61,10 @@ test('shows parse errors with the compiler message and location', async ({ page 
 		'`</span>` attempted to close an element that was not open'
 	);
 	await expect(alert.locator('span')).toHaveText('Line 2, column 1');
+	await expect(alert.getByRole('link', { name: 'About this error' })).toHaveAttribute(
+		'href',
+		'https://svelte.dev/e/element_invalid_closing_tag'
+	);
 
 	await show(page, 'Printed');
 	await expect(editor(page, 'Printed Svelte output')).toHaveText('Error parsing Svelte code');
@@ -122,4 +133,62 @@ test('has no horizontal overflow', async ({ page }) => {
 		() => document.documentElement.scrollWidth - document.documentElement.clientWidth
 	);
 	expect(overflow).toBeLessThanOrEqual(0);
+});
+
+test('Copy and Copy JSON put the exact printed output and AST on the clipboard', async ({
+	page,
+	context
+}) => {
+	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+	await open(page);
+	const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
+
+	await show(page, 'Printed');
+	await page.getByRole('button', { name: 'Copy', exact: true }).click();
+	await expect(page.getByRole('status')).toHaveText('Output copied');
+	expect(await clipboard()).toBe(expectedPrint(defaultSvelte));
+
+	await show(page, 'AST');
+	await page.getByRole('button', { name: 'Copy JSON' }).click();
+	await expect(page.getByRole('status')).toHaveText('AST copied');
+	expect(await clipboard()).toBe(expectedAst(defaultSvelte));
+});
+
+test('reports a failed copy', async ({ page }) => {
+	await page.addInitScript(() => {
+		navigator.clipboard.writeText = () => Promise.reject(new Error('denied'));
+	});
+	await open(page);
+	await page.getByRole('button', { name: 'Copy share link' }).click();
+	await expect(page.getByRole('status')).toHaveText('Copy failed');
+});
+
+test('opens links shared before the redesign', async ({ page }) => {
+	// A literal hash, not one built by the helper, so a change to the encoding
+	// cannot silently break URLs people already shared.
+	await open(page, '#DwCwjAfAyiCGBOBTAJgAgEaIGYHsmoBcRFUllEBnASwHMA7YAenAiA');
+	await expect(editor(page, 'Svelte input')).toHaveText('<h1>Shared before the redesign</h1>');
+});
+
+test('read-only panels take keyboard focus but reject edits', async ({ page }, testInfo) => {
+	test.skip(isMobile(testInfo.project.name), 'desktop keyboard flow');
+	await open(page);
+	const output = editor(page, 'Printed Svelte output');
+	await output.focus();
+	await expect(output).toBeFocused();
+	await expect(output).toHaveAttribute('aria-readonly', 'true');
+	await page.keyboard.insertText('typed');
+	await expect(output).not.toContainText('typed');
+});
+
+test('panels are tabpanels only while they are shown as tabs', async ({ page }, testInfo) => {
+	await open(page);
+	if (isMobile(testInfo.project.name)) {
+		await expect(page.getByRole('tabpanel', { name: 'Svelte' })).toBeVisible();
+		await page.getByRole('tab', { name: 'AST' }).click();
+		await expect(page.getByRole('tabpanel', { name: 'AST' })).toBeVisible();
+	} else {
+		await expect(page.getByRole('tabpanel')).toHaveCount(0);
+		await expect(page.getByRole('region', { name: /^AST/ })).toBeVisible();
+	}
 });

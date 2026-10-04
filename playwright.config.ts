@@ -20,11 +20,20 @@ export default defineConfig({
 				url: `http://localhost:${port}${base}`,
 				timeout: 180_000
 			},
+	// `@shots` only captures screenshots for the before / after comparison, so
+	// it runs as its own projects and does not count towards the e2e results.
 	projects: [
 		{
 			name: 'desktop',
+			grepInvert: /@shots/,
 			use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } }
 		},
-		{ name: 'mobile', use: { ...devices['Pixel 7'] } }
+		{ name: 'mobile', grepInvert: /@shots/, use: { ...devices['Pixel 7'] } },
+		{
+			name: 'shots-desktop',
+			grep: /@shots/,
+			use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } }
+		},
+		{ name: 'shots-mobile', grep: /@shots/, use: { ...devices['Pixel 7'] } }
 	]
 });

@@ -3,6 +3,8 @@
 	import { parse } from 'svelte/compiler';
 	import Editor from '#lib/Editor.svelte';
 	import LZString from 'lz-string';
+	import { tick } from 'svelte';
+	import { MediaQuery } from 'svelte/reactivity';
 
 	const tag = 'script';
 	const defaultSvelte = `\
@@ -18,6 +20,10 @@
 		{ id: 'output', label: 'Printed' },
 		{ id: 'ast', label: 'AST' }
 	];
+
+	// Matches the CSS breakpoint: below it the panels become tabs, and only then
+	// do they carry the tabpanel role.
+	const narrow = new MediaQuery('max-width: 860px');
 
 	function getInitialSvelte() {
 		const hash = location.hash.slice(1);
@@ -37,11 +43,16 @@
 
 	/** Human-readable message for an error thrown by `parse` or `print`. */
 	function describe(e: unknown) {
-		if (!(e instanceof Error)) return { message: String(e), location: '' };
-		// Svelte's CompileError carries `start: { line, column }` (column is 0-based).
-		const start = (e as { start?: { line: number; column: number } }).start;
+		if (!(e instanceof Error)) return { message: String(e), location: '', docs: '' };
+		// Svelte's CompileError carries `code` and `start: { line, column }` (column is 0-based).
+		const { code, start } = e as { code?: string; start?: { line: number; column: number } };
+		// The message's later lines repeat the docs URL that `code` already gives us.
 		const message = e.message.split('\n')[0] ?? e.message;
-		return { message, location: start ? `Line ${start.line}, column ${start.column + 1}` : '' };
+		return {
+			message,
+			location: start ? `Line ${start.line}, column ${start.column + 1}` : '',
+			docs: code ? `https://svelte.dev/e/${code}` : ''
+		};
 	}
 
 	let svelte = $state(getInitialSvelte());
@@ -77,6 +88,9 @@
 	});
 
 	async function copy(text: string, what: string) {
+		// Clear first so a repeated copy is announced again by the live region.
+		copied = null;
+		await tick();
 		try {
 			await navigator.clipboard.writeText(text);
 			copied = what;
@@ -158,8 +172,8 @@
 				onkeydown={onTabKeydown}
 			>
 				{panel.label}
-				{#if panel.id === 'input' && parsed.error}<span class="dot error" aria-label="has error"
-					></span>{/if}
+				{#if panel.id === 'input' && parsed.error}<span class="dot error" aria-hidden="true"
+					></span><span class="visually-hidden">(parse error)</span>{/if}
 			</button>
 		{/each}
 	</div>
@@ -168,7 +182,8 @@
 		<section
 			class="panel input"
 			id="panel-input"
-			aria-labelledby="heading-input"
+			role={narrow.current ? 'tabpanel' : undefined}
+			aria-labelledby={narrow.current ? 'tab-input' : 'heading-input'}
 			data-active={activePanel === 'input'}
 		>
 			<header class="panel-header">
@@ -186,6 +201,9 @@
 				<div class="problem" role="alert">
 					<strong>{parsed.error.message}</strong>
 					{#if parsed.error.location}<span>{parsed.error.location}</span>{/if}
+					{#if parsed.error.docs}<a href={parsed.error.docs} target="_blank" rel="noreferrer"
+							>About this error</a
+						>{/if}
 				</div>
 			{/if}
 		</section>
@@ -193,7 +211,8 @@
 		<section
 			class="panel output"
 			id="panel-output"
-			aria-labelledby="heading-output"
+			role={narrow.current ? 'tabpanel' : undefined}
+			aria-labelledby={narrow.current ? 'tab-output' : 'heading-output'}
 			data-active={activePanel === 'output'}
 		>
 			<header class="panel-header">
@@ -218,6 +237,9 @@
 			{#if printed.error}
 				<div class="problem" role="alert">
 					<strong>{printed.error.message}</strong>
+					{#if printed.error.docs}<a href={printed.error.docs} target="_blank" rel="noreferrer"
+							>About this error</a
+						>{/if}
 				</div>
 			{/if}
 		</section>
@@ -225,7 +247,8 @@
 		<section
 			class="panel ast"
 			id="panel-ast"
-			aria-labelledby="heading-ast"
+			role={narrow.current ? 'tabpanel' : undefined}
+			aria-labelledby={narrow.current ? 'tab-ast' : 'heading-ast'}
 			data-active={activePanel === 'ast'}
 		>
 			<header class="panel-header">
@@ -261,8 +284,9 @@
 		--border: #dfe3e8;
 		--text: #1d2229;
 		--text-muted: #59616d;
-		--text-faint: #8b929c;
-		--accent: #e5452e;
+		--text-faint: #646b76;
+		--accent: #cf3a24;
+		--accent-contrast: #ffffff;
 		--accent-text: #b4321f;
 		--active-line: #f4f6f9;
 		--selection: #ffd7cf;
@@ -272,6 +296,15 @@
 		--error-text: #a8241a;
 		--neutral-bg: #eef1f5;
 		--neutral-text: #4a5260;
+		--tab-selected: #ffffff;
+		/* Syntax colours, each at least 4.5:1 on --surface and --active-line. */
+		--tok-keyword: #c21f2c;
+		--tok-string: #0a3069;
+		--tok-constant: #0550ae;
+		--tok-property: #8a3500;
+		--tok-type: #7139c9;
+		--tok-tag: #116329;
+		--tok-comment: #626b75;
 	}
 
 	@media (prefers-color-scheme: dark) {
@@ -282,8 +315,9 @@
 			--border: #2a3039;
 			--text: #e6e9ee;
 			--text-muted: #a5adba;
-			--text-faint: #6b7380;
+			--text-faint: #8a93a0;
 			--accent: #ff6a4d;
+			--accent-contrast: #0f1115;
 			--accent-text: #ff8a73;
 			--active-line: #1b2027;
 			--selection: #5a2a22;
@@ -293,6 +327,14 @@
 			--error-text: #ff9b91;
 			--neutral-bg: #232933;
 			--neutral-text: #b8c0cc;
+			--tab-selected: #2c333e;
+			--tok-keyword: #ff7b72;
+			--tok-string: #a5d6ff;
+			--tok-constant: #79c0ff;
+			--tok-property: #ffa657;
+			--tok-type: #d2a8ff;
+			--tok-tag: #7ee787;
+			--tok-comment: #9aa4b0;
 		}
 	}
 
@@ -351,7 +393,7 @@
 		border-radius: 8px;
 		border: 1px solid var(--accent);
 		background: var(--accent);
-		color: #fff;
+		color: var(--accent-contrast);
 		cursor: pointer;
 	}
 
@@ -513,6 +555,20 @@
 		font-size: 12px;
 	}
 
+	.problem a {
+		color: inherit;
+		font-size: 12px;
+	}
+
+	.visually-hidden {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+
 	.tabs {
 		display: none;
 	}
@@ -560,7 +616,7 @@
 		}
 
 		[role='tab'][aria-selected='true'] {
-			background: var(--surface);
+			background: var(--tab-selected);
 			color: var(--text);
 			box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
 		}

@@ -3,6 +3,8 @@
 	import { EditorState } from '@codemirror/state';
 	import { EditorView, keymap, ViewUpdate } from '@codemirror/view';
 	import { defaultKeymap } from '@codemirror/commands';
+	import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
+	import { tags } from '@lezer/highlight';
 	import { svelte } from '@replit/codemirror-lang-svelte';
 	import { onMount } from 'svelte';
 
@@ -46,6 +48,26 @@
 		}
 	});
 
+	// basicSetup's default highlight style is tuned for light backgrounds only.
+	// Token colours come from CSS custom properties instead, so both themes can
+	// keep every token at WCAG AA contrast.
+	const highlight = HighlightStyle.define([
+		{
+			tag: [tags.keyword, tags.controlKeyword, tags.moduleKeyword],
+			color: 'var(--tok-keyword)'
+		},
+		{ tag: [tags.string, tags.special(tags.string), tags.regexp], color: 'var(--tok-string)' },
+		{ tag: [tags.number, tags.bool, tags.null, tags.atom], color: 'var(--tok-constant)' },
+		{ tag: [tags.propertyName, tags.attributeName], color: 'var(--tok-property)' },
+		{
+			tag: [tags.typeName, tags.className, tags.function(tags.variableName)],
+			color: 'var(--tok-type)'
+		},
+		{ tag: [tags.tagName, tags.angleBracket], color: 'var(--tok-tag)' },
+		{ tag: [tags.comment, tags.meta], color: 'var(--tok-comment)', fontStyle: 'italic' },
+		{ tag: tags.invalid, color: 'var(--error-text)' }
+	]);
+
 	function onChange(update: ViewUpdate) {
 		if (update.docChanged) {
 			code = update.state.doc.toString();
@@ -61,10 +83,16 @@
 					basicSetup,
 					svelte(),
 					theme,
+					syntaxHighlighting(highlight),
 					EditorView.updateListener.of(onChange),
-					EditorView.editable.of(editable),
+					// Read-only panels stay focusable so keyboard users can scroll,
+					// select and copy them; `readOnly` alone blocks edits.
 					EditorState.readOnly.of(!editable),
-					EditorView.contentAttributes.of({ 'aria-label': label })
+					EditorView.contentAttributes.of(
+						editable
+							? { 'aria-label': label }
+							: { 'aria-label': label, 'aria-readonly': 'true', inputmode: 'none' }
+					)
 				]
 			}),
 			parent: container
