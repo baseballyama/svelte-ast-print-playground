@@ -188,9 +188,6 @@
 					{#if parsed.error.location}<span>{parsed.error.location}</span>{/if}
 				</div>
 			{/if}
-			<p class="keyhint">
-				Tip: press <kbd>Esc</kbd> then <kbd>Tab</kbd> to move focus out of the editor.
-			</p>
 		</section>
 
 		<section
@@ -516,23 +513,6 @@
 		font-size: 12px;
 	}
 
-	.keyhint {
-		margin: 0;
-		padding: 6px 12px;
-		border-top: 1px solid var(--border);
-		color: var(--text-faint);
-		font-size: 12px;
-	}
-
-	kbd {
-		font-family: var(--font-mono);
-		font-size: 11px;
-		padding: 0 4px;
-		border: 1px solid var(--border);
-		border-radius: 4px;
-		background: var(--surface-raised);
-	}
-
 	.tabs {
 		display: none;
 	}
@@ -595,10 +575,6 @@
 		}
 
 		.panel[data-active='false'] {
-			display: none;
-		}
-
-		.keyhint {
 			display: none;
 		}
 	}
