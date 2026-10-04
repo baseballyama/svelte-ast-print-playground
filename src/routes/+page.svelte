@@ -95,12 +95,14 @@
 	// Roving focus for the small-screen tab bar (WAI-ARIA tabs pattern).
 	function onTabKeydown(event: KeyboardEvent) {
 		const index = panels.findIndex((p) => p.id === activePanel);
-		const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
-		let next = index;
-		if (step) next = (index + step + panels.length) % panels.length;
-		else if (event.key === 'Home') next = 0;
-		else if (event.key === 'End') next = panels.length - 1;
-		else return;
+		const targets: Record<string, number> = {
+			ArrowRight: (index + 1) % panels.length,
+			ArrowLeft: (index - 1 + panels.length) % panels.length,
+			Home: 0,
+			End: panels.length - 1
+		};
+		const next = targets[event.key];
+		if (next === undefined) return;
 		event.preventDefault();
 		activePanel = panels[next]!.id;
 		document.getElementById(`tab-${activePanel}`)?.focus();
