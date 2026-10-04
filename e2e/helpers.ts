@@ -7,6 +7,10 @@ export const defaultSvelte = `<script lang="ts">
 
 <div>Hi!</div>`;
 
+// Svelte 5 implicitly closes unclosed elements, so an unmatched closing tag at
+// the top level is the simplest input the compiler still rejects.
+export const invalidSvelte = '<div>Hi!</div>\n</span>';
+
 /** The URL fragment the playground uses to share `code`. */
 export const hashFor = (code: string) => `#${LZString.compressToEncodedURIComponent(code)}`;
 

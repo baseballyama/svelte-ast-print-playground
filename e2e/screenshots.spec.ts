@@ -1,12 +1,12 @@
 import { test } from '@playwright/test';
-import { hashFor, open } from './helpers';
+import { hashFor, invalidSvelte, open } from './helpers';
 
 // UI-agnostic captures used for before / after comparison: they only rely on
 // the URL hash and CodeMirror, so they also run against the previous UI.
 const dir = process.env.SHOTS_DIR ?? 'test-results/screens';
 const states = {
 	default: '',
-	error: hashFor('<div>\n  <span>\n</div>')
+	error: hashFor(invalidSvelte)
 };
 
 for (const [state, hash] of Object.entries(states)) {

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { codeFromUrl, defaultSvelte, editor, hashFor, open } from './helpers';
+import { codeFromUrl, defaultSvelte, editor, hashFor, invalidSvelte, open } from './helpers';
 
 const isMobile = (name: string) => name === 'mobile';
 
@@ -47,11 +47,13 @@ test('editing updates the output and the share hash, and the hash restores it', 
 });
 
 test('shows parse errors with the compiler message and location', async ({ page }) => {
-	await open(page, hashFor('<div>\n  <span>\n</div>'));
+	await open(page, hashFor(invalidSvelte));
 	await expect(page.getByText('Parse error', { exact: true })).toBeVisible();
 	const alert = page.getByRole('alert');
-	await expect(alert).toContainText('attempted to close an element that was not open');
-	await expect(alert).toContainText(/Line 3, column \d+/);
+	await expect(alert.locator('strong')).toHaveText(
+		'`</span>` attempted to close an element that was not open'
+	);
+	await expect(alert.locator('span')).toHaveText('Line 2, column 1');
 
 	await show(page, 'Printed');
 	await expect(editor(page, 'Printed Svelte output')).toHaveText('Error parsing Svelte code');

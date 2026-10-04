@@ -72,10 +72,12 @@
 		return () => editorView?.destroy();
 	});
 
-	// Read-only editors mirror `code` whenever the parent recomputes it.
+	// Mirror `code` when the parent changes it: recomputed output for read-only
+	// editors, and "Reset example" for the input. Typing never re-enters here
+	// because `onChange` has already made `code` equal to the document.
 	$effect(() => {
 		const next = code;
-		if (editable || !editorView || editorView.state.doc.toString() === next) return;
+		if (!editorView || editorView.state.doc.toString() === next) return;
 		editorView.dispatch({ changes: { from: 0, to: editorView.state.doc.length, insert: next } });
 	});
 </script>
