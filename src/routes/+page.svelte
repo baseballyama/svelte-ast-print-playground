@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { print } from 'svelte-ast-print';
 	import { parse } from 'svelte/compiler';
-	import Editor from '$lib/Editor.svelte';
+	import Editor from '#lib/Editor.svelte';
 	import LZString from 'lz-string';
 
 	const tag = 'script';
@@ -40,7 +40,7 @@
 	let output = $derived.by(() => {
 		try {
 			if (!svelteAST) return 'Error parsing Svelte code';
-			return print(svelteAST);
+			return print(svelteAST).code;
 		} catch (e) {
 			console.error(e);
 			return 'Error printing AST';
