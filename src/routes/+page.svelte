@@ -201,8 +201,10 @@
 				<div class="problem" role="alert">
 					<strong>{parsed.error.message}</strong>
 					{#if parsed.error.location}<span>{parsed.error.location}</span>{/if}
-					{#if parsed.error.docs}<a href={parsed.error.docs} target="_blank" rel="noreferrer"
-							>About this error</a
+					{#if parsed.error.docs}<a
+							href={parsed.error.docs}
+							target="_blank"
+							rel="external noreferrer">About this error</a
 						>{/if}
 				</div>
 			{/if}
@@ -237,8 +239,10 @@
 			{#if printed.error}
 				<div class="problem" role="alert">
 					<strong>{printed.error.message}</strong>
-					{#if printed.error.docs}<a href={printed.error.docs} target="_blank" rel="noreferrer"
-							>About this error</a
+					{#if printed.error.docs}<a
+							href={printed.error.docs}
+							target="_blank"
+							rel="external noreferrer">About this error</a
 						>{/if}
 				</div>
 			{/if}
